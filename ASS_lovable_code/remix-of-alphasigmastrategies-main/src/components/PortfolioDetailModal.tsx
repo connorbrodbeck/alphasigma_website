@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   PieChart, Pie, Cell,
   LineChart, Line, XAxis, YAxis,
@@ -105,7 +106,7 @@ export function PortfolioDetailModal({
     if (!token) return;
     setDeletingId(holdingId);
     try {
-      const res = await fetch(`/api/holdings/${holdingId}`, {
+      const res = await fetch(apiUrl(`/api/holdings/${holdingId}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -137,7 +138,7 @@ export function PortfolioDetailModal({
     setCloseSubmitting(true);
     setCloseError(null);
     try {
-      const res = await fetch(`/api/holdings/${holdingId}/close`, {
+      const res = await fetch(apiUrl(`/api/holdings/${holdingId}/close`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -164,7 +165,7 @@ export function PortfolioDetailModal({
 
   async function fetchClosedHoldings() {
     try {
-      const res = await fetch(`/api/holdings/closed/${member.id}`);
+      const res = await fetch(apiUrl(`/api/holdings/closed/${member.id}`));
       if (res.ok) setClosedHoldings(await res.json());
     } catch {
       // silently fail
@@ -182,7 +183,7 @@ export function PortfolioDetailModal({
     if (holdings.length === 0) return;
     const uniqueTickers = [...new Set(holdings.map(h => h.ticker))];
     setHistoryLoading(true);
-    fetch(`/api/holdings/history?tickers=${uniqueTickers.join(",")}`)
+    fetch(apiUrl(`/api/holdings/history?tickers=${uniqueTickers.join(",")}`))
       .then(r => r.json())
       .then(data => setHistoryData(data))
       .catch(() => setHistoryData({}))

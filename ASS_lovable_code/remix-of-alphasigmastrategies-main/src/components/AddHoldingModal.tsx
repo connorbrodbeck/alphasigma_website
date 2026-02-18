@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { apiUrl } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -85,7 +86,7 @@ export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalPro
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/holdings/search?q=${encodeURIComponent(value)}`);
+        const res = await fetch(apiUrl(`/api/holdings/search?q=${encodeURIComponent(value)}`));
         const data: SearchResult[] = await res.json();
         setSearchResults(data);
         setDropdownOpen(data.length > 0);
@@ -106,7 +107,7 @@ export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalPro
   async function onSubmit(values: FormValues) {
     setServerError(null);
     try {
-      const res = await fetch("/api/holdings", {
+      const res = await fetch(apiUrl("/api/holdings"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { apiUrl } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { AddHoldingModal } from "@/components/AddHoldingModal";
 import { PortfolioDetailModal } from "@/components/PortfolioDetailModal";
@@ -130,7 +131,7 @@ function MemberCard({ member, isOwn, token, onRefreshLeaderboard }: MemberCardPr
   const fetchHoldings = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/holdings/${member.id}`);
+      const res = await fetch(apiUrl(`/api/holdings/${member.id}`));
       if (res.ok) {
         const data = await res.json();
         setHoldings(data);
@@ -150,7 +151,7 @@ function MemberCard({ member, isOwn, token, onRefreshLeaderboard }: MemberCardPr
     if (!token) return;
     setDeletingId(holdingId);
     try {
-      const res = await fetch(`/api/holdings/${holdingId}`, {
+      const res = await fetch(apiUrl(`/api/holdings/${holdingId}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -339,7 +340,7 @@ const Portfolios = () => {
       const results = await Promise.all(
         currentMembers.map(async (m) => {
           try {
-            const res = await fetch(`/api/holdings/${m.id}`);
+            const res = await fetch(apiUrl(`/api/holdings/${m.id}`));
             if (!res.ok) return { member: m, avgReturn: null, count: 0 };
             const holdings: Holding[] = await res.json();
             const withPct = holdings.filter(h => h.total_pct != null);
@@ -361,7 +362,7 @@ const Portfolios = () => {
   }, []);
 
   useEffect(() => {
-    fetch("/api/members")
+    fetch(apiUrl("/api/members"))
       .then((r) => r.json())
       .then((data) => {
         setMembers(data);
