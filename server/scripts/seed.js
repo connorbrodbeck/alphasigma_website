@@ -23,7 +23,7 @@ async function seed() {
     for (const member of members) {
       try {
         await pool.query(
-          'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), password_hash = VALUES(password_hash)',
+          'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, password_hash = EXCLUDED.password_hash',
           [member.name, member.email, passwordHash]
         );
         console.log(`  ✓ ${member.name} (${member.email})`);
@@ -32,7 +32,7 @@ async function seed() {
       }
     }
 
-    const [rows] = await pool.query('SELECT id, name, email FROM users ORDER BY id');
+    const { rows } = await pool.query('SELECT id, name, email FROM users ORDER BY id');
     console.log('\nUsers in database:');
     rows.forEach((r) => console.log(`  [${r.id}] ${r.name} — ${r.email}`));
 

@@ -15,8 +15,8 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      'SELECT id, name, email, password_hash, force_password_change FROM users WHERE email = ?',
+    const { rows } = await pool.query(
+      'SELECT id, name, email, password_hash, force_password_change FROM users WHERE email = $1',
       [email.toLowerCase().trim()]
     );
 
@@ -31,7 +31,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const mustChangePassword = user.force_password_change === 1;
+    const mustChangePassword = !!user.force_password_change;
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, name: user.name, force_password_change: mustChangePassword },
@@ -62,8 +62,8 @@ router.post('/change-password', authMiddleware, async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      'SELECT id, name, email, password_hash FROM users WHERE id = ?',
+    const { rows } = await pool.query(
+      'SELECT id, name, email, password_hash FROM users WHERE id = $1',
       [req.user.userId]
     );
 
@@ -81,7 +81,7 @@ router.post('/change-password', authMiddleware, async (req, res) => {
     const newHash = await bcrypt.hash(newPassword, 12);
 
     await pool.query(
-      'UPDATE users SET password_hash = ?, force_password_change = 0 WHERE id = ?',
+      'UPDATE users SET password_hash = $1, force_password_change = false WHERE id = $2',
       [newHash, user.id]
     );
 

@@ -1,30 +1,22 @@
--- Run this once in MySQL Workbench or CLI to set up the database
-
-CREATE DATABASE IF NOT EXISTS alphasigma;
-USE alphasigma;
+-- Run this once in the Supabase SQL editor to create your tables
 
 CREATE TABLE IF NOT EXISTS users (
-  id INT PRIMARY KEY AUTO_INCREMENT,
+  id SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   email VARCHAR(100) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  force_password_change TINYINT(1) NOT NULL DEFAULT 1
+  force_password_change BOOLEAN NOT NULL DEFAULT TRUE
 );
 
--- If DB already exists, run: ALTER TABLE users ADD COLUMN force_password_change TINYINT(1) NOT NULL DEFAULT 1;
-
 CREATE TABLE IF NOT EXISTS holdings (
-  id INT PRIMARY KEY AUTO_INCREMENT,
-  user_id INT NOT NULL,
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   ticker VARCHAR(20) NOT NULL,
   name VARCHAR(100) NOT NULL,
-  type ENUM('stock', 'etf') NOT NULL,
-  position ENUM('long', 'short') NOT NULL,
+  type VARCHAR(10) NOT NULL CHECK (type IN ('stock', 'etf')),
+  position VARCHAR(10) NOT NULL CHECK (position IN ('long', 'short')),
   purchase_price DECIMAL(10, 4) NOT NULL,
   close_price DECIMAL(10, 4) NULL,
   closed_at TIMESTAMP NULL DEFAULT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- If DB already exists, run: server/scripts/add_close_position.sql

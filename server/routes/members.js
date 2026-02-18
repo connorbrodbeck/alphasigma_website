@@ -6,7 +6,7 @@ const router = express.Router();
 // GET /api/members — public, returns id + name only
 router.get('/', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id, name FROM users ORDER BY id ASC');
+    const { rows } = await pool.query('SELECT id, name FROM users ORDER BY id ASC');
     res.json(rows);
   } catch (err) {
     console.error('Members error:', err);

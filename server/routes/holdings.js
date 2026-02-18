@@ -89,8 +89,8 @@ router.get('/closed/:userId', async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      'SELECT id, ticker, name, type, position, purchase_price, close_price, closed_at FROM holdings WHERE user_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC',
+    const { rows } = await pool.query(
+      'SELECT id, ticker, name, type, position, purchase_price, close_price, closed_at FROM holdings WHERE user_id = $1 AND closed_at IS NOT NULL ORDER BY closed_at DESC',
       [userId]
     );
 
@@ -130,8 +130,8 @@ router.get('/:userId', async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      'SELECT id, ticker, name, type, position, purchase_price, created_at FROM holdings WHERE user_id = ? AND closed_at IS NULL ORDER BY created_at DESC',
+    const { rows } = await pool.query(
+      'SELECT id, ticker, name, type, position, purchase_price, created_at FROM holdings WHERE user_id = $1 AND closed_at IS NULL ORDER BY created_at DESC',
       [userId]
     );
 
@@ -160,7 +160,6 @@ router.get('/:userId', async (req, res) => {
         const currentPrice = quote.currentPrice;
         const previousClose = quote.previousClose;
 
-        // For short positions, gains/losses are inverted
         const multiplier = holding.position === 'short' ? -1 : 1;
 
         const daily_pct =
@@ -225,8 +224,8 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 
   // Check for duplicate open position
-  const [existing] = await pool.query(
-    'SELECT id FROM holdings WHERE user_id = ? AND ticker = ? AND closed_at IS NULL',
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM holdings WHERE user_id = $1 AND ticker = $2 AND closed_at IS NULL',
     [userId, ticker.toUpperCase()]
   );
   if (existing.length > 0) {
@@ -236,13 +235,13 @@ router.post('/', authMiddleware, async (req, res) => {
   const name = quote.shortName || ticker.toUpperCase();
 
   try {
-    const [result] = await pool.query(
-      'INSERT INTO holdings (user_id, ticker, name, type, position, purchase_price) VALUES (?, ?, ?, ?, ?, ?)',
+    const { rows: [result] } = await pool.query(
+      'INSERT INTO holdings (user_id, ticker, name, type, position, purchase_price) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [userId, ticker.toUpperCase(), name, type, position, parsedPrice]
     );
 
     res.status(201).json({
-      id: result.insertId,
+      id: result.id,
       user_id: userId,
       ticker: ticker.toUpperCase(),
       name,
@@ -264,8 +263,8 @@ router.delete('/:holdingId', authMiddleware, async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      'SELECT id, user_id FROM holdings WHERE id = ?',
+    const { rows } = await pool.query(
+      'SELECT id, user_id FROM holdings WHERE id = $1',
       [holdingId]
     );
 
@@ -277,7 +276,7 @@ router.delete('/:holdingId', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: not your holding' });
     }
 
-    await pool.query('DELETE FROM holdings WHERE id = ?', [holdingId]);
+    await pool.query('DELETE FROM holdings WHERE id = $1', [holdingId]);
     res.json({ message: 'Holding deleted successfully' });
   } catch (err) {
     console.error('Holdings delete error:', err);
@@ -298,8 +297,8 @@ router.patch('/:holdingId/close', authMiddleware, async (req, res) => {
   }
 
   try {
-    const [rows] = await pool.query(
-      'SELECT id, user_id FROM holdings WHERE id = ? AND closed_at IS NULL',
+    const { rows } = await pool.query(
+      'SELECT id, user_id FROM holdings WHERE id = $1 AND closed_at IS NULL',
       [holdingId]
     );
 
@@ -312,7 +311,7 @@ router.patch('/:holdingId/close', authMiddleware, async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE holdings SET close_price = ?, closed_at = NOW() WHERE id = ?',
+      'UPDATE holdings SET close_price = $1, closed_at = NOW() WHERE id = $2',
       [parsedPrice, holdingId]
     );
 
