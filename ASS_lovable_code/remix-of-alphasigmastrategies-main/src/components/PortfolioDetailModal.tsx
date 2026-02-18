@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUp, ArrowDown, ArrowUpDown, LogOut } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpDown, LogOut, Trash2 } from "lucide-react";
 
 interface Member {
   id: number;
@@ -97,6 +97,23 @@ export function PortfolioDetailModal({
       return sortDir === "desc" ? bVal - aVal : aVal - bVal;
     });
   }, [holdings, sortCol, sortDir]);
+
+  // ── Delete holding state ──
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  async function handleDelete(holdingId: number) {
+    if (!token) return;
+    setDeletingId(holdingId);
+    try {
+      const res = await fetch(`/api/holdings/${holdingId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) onRefresh();
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   // ── Close position state ──
   const [closingId, setClosingId] = useState<number | null>(null);
@@ -340,13 +357,23 @@ export function PortfolioDetailModal({
                           </td>
                           {isOwn && (
                             <td className="py-2 pl-3 text-right">
-                              <button
-                                onClick={() => { setClosingId(h.id); setClosePrice(""); setCloseError(null); }}
-                                className="text-muted-foreground hover:text-gold transition-colors"
-                                title="Close position"
-                              >
-                                <LogOut className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => { setClosingId(h.id); setClosePrice(""); setCloseError(null); }}
+                                  className="text-muted-foreground hover:text-gold transition-colors"
+                                  title="Close position"
+                                >
+                                  <LogOut className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(h.id)}
+                                  disabled={deletingId === h.id}
+                                  className="text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+                                  title="Delete holding"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </td>
                           )}
                         </tr>

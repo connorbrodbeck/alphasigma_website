@@ -224,6 +224,15 @@ router.post('/', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'Ticker not found or has no price data' });
   }
 
+  // Check for duplicate open position
+  const [existing] = await pool.query(
+    'SELECT id FROM holdings WHERE user_id = ? AND ticker = ? AND closed_at IS NULL',
+    [userId, ticker.toUpperCase()]
+  );
+  if (existing.length > 0) {
+    return res.status(409).json({ error: `You already have an open position in ${ticker.toUpperCase()}` });
+  }
+
   const name = quote.shortName || ticker.toUpperCase();
 
   try {

@@ -10,6 +10,12 @@
 
 ## Add filtering system for daily return % and total return % so that you can sort by highest return and lowest return. (done)
 
-## add the labels for the pie chart a little bit more under it so that it doesn't overlap the chart.
+## add the labels for the pie chart a little bit more under it so that it doesn't overlap the chart.(done)
 
-## Figure out a system for when you close a position. 
+## Figure out a system for when you close a position. (done)
+
+## Make Sure somebody cant add their ticker twice (done)
+
+## Make sure that if somebody makes a mistake that they can delete there ticker. (done)
+
+## Add a leaderboard that ranks members by total return (done)

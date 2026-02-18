@@ -5,7 +5,7 @@ import { PortfolioDetailModal } from "@/components/PortfolioDetailModal";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, Plus, Trash2, Maximize2 } from "lucide-react";
+import { Briefcase, Plus, Trash2, Maximize2, Trophy } from "lucide-react";
 
 interface Member {
   id: number;
@@ -22,6 +22,12 @@ interface Holding {
   current_price: number | null;
   daily_pct: number | null;
   total_pct: number | null;
+}
+
+interface LeaderboardEntry {
+  member: Member;
+  avgReturn: number | null;
+  count: number;
 }
 
 function PctBadge({ value }: { value: number | null }) {
@@ -49,13 +55,72 @@ function HoldingsSkeleton() {
   );
 }
 
+const RANK_STYLES: Record<number, string> = {
+  1: "bg-gold text-navy font-bold",
+  2: "bg-slate-400 text-navy font-bold",
+  3: "bg-amber-700 text-white font-bold",
+};
+
+function Leaderboard({ entries, loading }: { entries: LeaderboardEntry[]; loading: boolean }) {
+  return (
+    <div className="mb-10 animate-fade-in">
+      <div className="flex items-center gap-2 mb-4">
+        <Trophy className="h-5 w-5 text-gold" />
+        <h3 className="text-lg font-bold text-foreground">Leaderboard</h3>
+        <span className="text-xs text-muted-foreground">— ranked by average portfolio return</span>
+      </div>
+
+      {loading ? (
+        <div className="flex gap-3 flex-wrap">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="animate-pulse h-16 w-36 bg-card/50 rounded-lg border border-gold/10" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {entries.map((entry, i) => {
+            const rank = i + 1;
+            const rankStyle = RANK_STYLES[rank] ?? "bg-card text-muted-foreground font-semibold";
+            const isPos = entry.avgReturn != null && entry.avgReturn >= 0;
+
+            return (
+              <div
+                key={entry.member.id}
+                className="flex flex-col gap-1 rounded-lg border border-gold/15 bg-card/50 px-4 py-3"
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs rounded-full w-5 h-5 flex items-center justify-center shrink-0 ${rankStyle}`}>
+                    {rank}
+                  </span>
+                  <span className="text-sm font-semibold text-foreground truncate">{entry.member.name.split(" ")[0]}</span>
+                </div>
+                <div className="pl-7">
+                  {entry.avgReturn != null ? (
+                    <span className={`text-base font-bold ${isPos ? "text-emerald-400" : "text-red-400"}`}>
+                      {isPos ? "+" : ""}{entry.avgReturn.toFixed(2)}%
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">No data</span>
+                  )}
+                  <p className="text-xs text-muted-foreground">{entry.count} holding{entry.count !== 1 ? "s" : ""}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface MemberCardProps {
   member: Member;
   isOwn: boolean;
   token: string | null;
+  onRefreshLeaderboard: () => void;
 }
 
-function MemberCard({ member, isOwn, token }: MemberCardProps) {
+function MemberCard({ member, isOwn, token, onRefreshLeaderboard }: MemberCardProps) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -91,10 +156,16 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
       });
       if (res.ok) {
         await fetchHoldings();
+        onRefreshLeaderboard();
       }
     } finally {
       setDeletingId(null);
     }
+  }
+
+  async function handleAddSuccess() {
+    await fetchHoldings();
+    onRefreshLeaderboard();
   }
 
   // Top 5 by total return (nulls sorted last)
@@ -235,7 +306,7 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
         <AddHoldingModal
           open={addModalOpen}
           onClose={() => setAddModalOpen(false)}
-          onSuccess={fetchHoldings}
+          onSuccess={handleAddSuccess}
         />
       )}
 
@@ -246,7 +317,7 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
         onClose={() => setDetailOpen(false)}
         isOwn={isOwn}
         token={token}
-        onRefresh={fetchHoldings}
+        onRefresh={() => { fetchHoldings(); onRefreshLeaderboard(); }}
       />
     </>
   );
@@ -257,13 +328,52 @@ const Portfolios = () => {
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
 
+  // ── Leaderboard state ──
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+
+  const fetchLeaderboard = useCallback(async (currentMembers: Member[]) => {
+    if (!currentMembers.length) return;
+    setLeaderboardLoading(true);
+    try {
+      const results = await Promise.all(
+        currentMembers.map(async (m) => {
+          try {
+            const res = await fetch(`/api/holdings/${m.id}`);
+            if (!res.ok) return { member: m, avgReturn: null, count: 0 };
+            const holdings: Holding[] = await res.json();
+            const withPct = holdings.filter(h => h.total_pct != null);
+            const avgReturn = withPct.length
+              ? withPct.reduce((s, h) => s + h.total_pct!, 0) / withPct.length
+              : null;
+            return { member: m, avgReturn, count: holdings.length };
+          } catch {
+            return { member: m, avgReturn: null, count: 0 };
+          }
+        })
+      );
+      setLeaderboard(
+        results.sort((a, b) => (b.avgReturn ?? -Infinity) - (a.avgReturn ?? -Infinity))
+      );
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetch("/api/members")
       .then((r) => r.json())
-      .then((data) => setMembers(data))
+      .then((data) => {
+        setMembers(data);
+        fetchLeaderboard(data);
+      })
       .catch(() => {})
       .finally(() => setMembersLoading(false));
-  }, []);
+  }, [fetchLeaderboard]);
+
+  const refreshLeaderboard = useCallback(() => {
+    fetchLeaderboard(members);
+  }, [fetchLeaderboard, members]);
 
   return (
     <section className="py-12 sm:py-16 lg:py-20 px-4 sm:px-6">
@@ -279,6 +389,10 @@ const Portfolios = () => {
           </p>
         </div>
 
+        {!membersLoading && (
+          <Leaderboard entries={leaderboard} loading={leaderboardLoading} />
+        )}
+
         {membersLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -293,6 +407,7 @@ const Portfolios = () => {
                 member={member}
                 isOwn={user?.id === member.id}
                 token={token}
+                onRefreshLeaderboard={refreshLeaderboard}
               />
             ))}
           </div>
