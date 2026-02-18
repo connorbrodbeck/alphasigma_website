@@ -5,7 +5,124 @@ const { getQuote } = require('../services/yahooFinance');
 
 const router = express.Router();
 
-// GET /api/holdings/:userId — public, returns holdings with live Yahoo prices
+// GET /api/holdings/search — ticker autocomplete via Yahoo Finance
+router.get('/search', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json([]);
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const data = await response.json();
+
+    const results = (data.quotes || [])
+      .filter(r => ['EQUITY', 'ETF'].includes(r.quoteType))
+      .map(r => ({
+        symbol: r.symbol,
+        name: r.longname || r.shortname || r.symbol,
+        quoteType: r.quoteType,
+        exchange: r.exchange,
+      }))
+      .slice(0, 7);
+
+    res.json(results);
+  } catch (err) {
+    console.error('Ticker search error:', err.message);
+    res.json([]);
+  }
+});
+
+// GET /api/holdings/history?tickers=AAPL,TSLA — 1-year monthly close prices per ticker
+router.get('/history', async (req, res) => {
+  const tickers = (req.query.tickers || '')
+    .split(',')
+    .map(t => t.trim().toUpperCase())
+    .filter(Boolean);
+
+  if (!tickers.length) return res.json({});
+
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  try {
+    const entries = await Promise.all(
+      tickers.map(async (ticker) => {
+        try {
+          const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1mo&range=1y`;
+          const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          const data = await response.json();
+
+          const result = data?.chart?.result?.[0];
+          if (!result) return [ticker, []];
+
+          const timestamps = result.timestamp || [];
+          const closes = result.indicators?.quote?.[0]?.close || [];
+
+          const points = timestamps
+            .map((ts, i) => {
+              const d = new Date(ts * 1000);
+              return {
+                month: `${MONTHS[d.getMonth()]} '${String(d.getFullYear()).slice(2)}`,
+                close: closes[i] ?? null,
+              };
+            })
+            .filter(p => p.close != null);
+
+          return [ticker, points];
+        } catch {
+          return [ticker, []];
+        }
+      })
+    );
+
+    res.json(Object.fromEntries(entries));
+  } catch (err) {
+    console.error('History fetch error:', err.message);
+    res.json({});
+  }
+});
+
+// GET /api/holdings/closed/:userId — public, returns closed positions with realized P&L
+router.get('/closed/:userId', async (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  if (isNaN(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, ticker, name, type, position, purchase_price, close_price, closed_at FROM holdings WHERE user_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC',
+      [userId]
+    );
+
+    const result = rows.map(h => {
+      const purchasePrice = parseFloat(h.purchase_price);
+      const closePrice    = parseFloat(h.close_price);
+      const multiplier    = h.position === 'short' ? -1 : 1;
+      const realized_pct  = purchasePrice !== 0
+        ? parseFloat((multiplier * ((closePrice - purchasePrice) / purchasePrice) * 100).toFixed(2))
+        : null;
+
+      return {
+        id: h.id,
+        ticker: h.ticker,
+        name: h.name,
+        type: h.type,
+        position: h.position,
+        purchase_price: purchasePrice,
+        close_price: closePrice,
+        closed_at: h.closed_at,
+        realized_pct,
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Closed holdings fetch error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/holdings/:userId — public, returns OPEN holdings with live Yahoo prices
 router.get('/:userId', async (req, res) => {
   const userId = parseInt(req.params.userId, 10);
   if (isNaN(userId)) {
@@ -14,7 +131,7 @@ router.get('/:userId', async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      'SELECT id, ticker, name, type, position, purchase_price, created_at FROM holdings WHERE user_id = ? ORDER BY created_at DESC',
+      'SELECT id, ticker, name, type, position, purchase_price, created_at FROM holdings WHERE user_id = ? AND closed_at IS NULL ORDER BY created_at DESC',
       [userId]
     );
 
@@ -155,6 +272,44 @@ router.delete('/:holdingId', authMiddleware, async (req, res) => {
     res.json({ message: 'Holding deleted successfully' });
   } catch (err) {
     console.error('Holdings delete error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/holdings/:holdingId/close — JWT required, close a position with exit price
+router.patch('/:holdingId/close', authMiddleware, async (req, res) => {
+  const holdingId = parseInt(req.params.holdingId, 10);
+  if (isNaN(holdingId)) {
+    return res.status(400).json({ error: 'Invalid holding ID' });
+  }
+
+  const parsedPrice = parseFloat(req.body.close_price);
+  if (isNaN(parsedPrice) || parsedPrice <= 0) {
+    return res.status(400).json({ error: 'close_price must be a positive number' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, user_id FROM holdings WHERE id = ? AND closed_at IS NULL',
+      [holdingId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Holding not found or already closed' });
+    }
+
+    if (rows[0].user_id !== req.user.userId) {
+      return res.status(403).json({ error: 'Forbidden: not your holding' });
+    }
+
+    await pool.query(
+      'UPDATE holdings SET close_price = ?, closed_at = NOW() WHERE id = ?',
+      [parsedPrice, holdingId]
+    );
+
+    res.json({ message: 'Position closed successfully' });
+  } catch (err) {
+    console.error('Close holding error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

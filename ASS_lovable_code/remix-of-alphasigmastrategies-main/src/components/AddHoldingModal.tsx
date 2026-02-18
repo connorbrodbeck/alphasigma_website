@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -27,6 +27,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+interface SearchResult {
+  symbol: string;
+  name: string;
+  quoteType: string;
+  exchange: string;
+}
+
 const schema = z.object({
   ticker: z
     .string()
@@ -54,6 +61,9 @@ interface AddHoldingModalProps {
 export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalProps) {
   const { token } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -62,6 +72,36 @@ export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalPro
       purchase_price: "",
     },
   });
+
+  function handleTickerChange(value: string, fieldOnChange: (v: string) => void) {
+    fieldOnChange(value);
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!value) {
+      setSearchResults([]);
+      setDropdownOpen(false);
+      return;
+    }
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/holdings/search?q=${encodeURIComponent(value)}`);
+        const data: SearchResult[] = await res.json();
+        setSearchResults(data);
+        setDropdownOpen(data.length > 0);
+      } catch {
+        setSearchResults([]);
+        setDropdownOpen(false);
+      }
+    }, 300);
+  }
+
+  function handleSelect(result: SearchResult, fieldOnChange: (v: string) => void) {
+    fieldOnChange(result.symbol);
+    form.setValue('type', result.quoteType === 'ETF' ? 'etf' : 'stock');
+    setDropdownOpen(false);
+    setSearchResults([]);
+  }
 
   async function onSubmit(values: FormValues) {
     setServerError(null);
@@ -96,6 +136,8 @@ export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalPro
   function handleClose() {
     form.reset();
     setServerError(null);
+    setDropdownOpen(false);
+    setSearchResults([]);
     onClose();
   }
 
@@ -114,11 +156,40 @@ export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalPro
                 <FormItem>
                   <FormLabel>Ticker Symbol</FormLabel>
                   <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="e.g. AAPL"
-                      className="bg-background/50 border-gold/30 focus:border-gold uppercase"
-                    />
+                    <div className="relative">
+                      <Input
+                        {...field}
+                        onChange={e => handleTickerChange(e.target.value, field.onChange)}
+                        onBlur={() => {
+                          field.onBlur();
+                          // small delay so a click on a result fires before the dropdown closes
+                          setTimeout(() => setDropdownOpen(false), 150);
+                        }}
+                        placeholder="e.g. AAPL"
+                        className="bg-background/50 border-gold/30 focus:border-gold uppercase"
+                        autoComplete="off"
+                      />
+                      {dropdownOpen && searchResults.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-md border border-gold/20 bg-card shadow-lg overflow-hidden">
+                          {searchResults.map(r => (
+                            <button
+                              key={r.symbol}
+                              type="button"
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-gold/10 cursor-pointer"
+                              onMouseDown={e => {
+                                // prevent input blur from firing before onClick
+                                e.preventDefault();
+                                handleSelect(r, field.onChange);
+                              }}
+                            >
+                              <span className="font-mono font-semibold">{r.symbol}</span>
+                              <span className="text-muted-foreground truncate">{r.name}</span>
+                              <span className="ml-auto text-xs text-muted-foreground shrink-0">{r.exchange}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -131,7 +202,7 @@ export function AddHoldingModal({ open, onClose, onSuccess }: AddHoldingModalPro
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Type</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-background/50 border-gold/30">
                         <SelectValue placeholder="Select type" />

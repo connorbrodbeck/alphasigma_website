@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS holdings (
   type ENUM('stock', 'etf') NOT NULL,
   position ENUM('long', 'short') NOT NULL,
   purchase_price DECIMAL(10, 4) NOT NULL,
+  close_price DECIMAL(10, 4) NULL,
+  closed_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- If DB already exists, run: server/scripts/add_close_position.sql

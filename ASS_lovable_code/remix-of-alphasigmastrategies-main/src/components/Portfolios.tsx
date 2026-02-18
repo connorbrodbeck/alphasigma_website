@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AddHoldingModal } from "@/components/AddHoldingModal";
+import { PortfolioDetailModal } from "@/components/PortfolioDetailModal";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Briefcase, Plus, Trash2 } from "lucide-react";
+import { Briefcase, Plus, Trash2, Maximize2 } from "lucide-react";
 
 interface Member {
   id: number;
@@ -58,6 +59,7 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fetchHoldings = useCallback(async () => {
@@ -95,11 +97,24 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
     }
   }
 
-  const firstName = member.name.split(" ")[0];
+  // Top 5 by total return (nulls sorted last)
+  const top5 = [...holdings]
+    .sort((a, b) => (b.total_pct ?? -Infinity) - (a.total_pct ?? -Infinity))
+    .slice(0, 5);
+  const extra = holdings.length - 5;
+
+  // Average total return across all holdings that have data
+  const withPct = holdings.filter(h => h.total_pct != null);
+  const avgReturn = withPct.length
+    ? withPct.reduce((s, h) => s + h.total_pct!, 0) / withPct.length
+    : null;
 
   return (
     <>
-      <Card className="bg-card/50 backdrop-blur-sm border-gold/20 hover:border-gold/40 transition-all duration-300 flex flex-col">
+      <Card
+        className="bg-card/50 backdrop-blur-sm border-gold/20 hover:border-gold/40 transition-all duration-300 flex flex-col cursor-pointer group/card"
+        onClick={() => setDetailOpen(true)}
+      >
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -111,16 +126,19 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
                 <p className="text-xs text-muted-foreground">{holdings.length} holding{holdings.length !== 1 ? "s" : ""}</p>
               </div>
             </div>
-            {isOwn && (
-              <Button
-                size="sm"
-                onClick={() => setAddModalOpen(true)}
-                className="bg-gold hover:bg-gold/90 text-navy font-semibold h-8 px-3"
-              >
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Add
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              <Maximize2 className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/card:opacity-60 transition-opacity" />
+              {isOwn && (
+                <Button
+                  size="sm"
+                  onClick={e => { e.stopPropagation(); setAddModalOpen(true); }}
+                  className="bg-gold hover:bg-gold/90 text-navy font-semibold h-8 px-3"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Add
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
 
@@ -133,63 +151,81 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
             </p>
           ) : (
             <div className="mt-2">
-              {/* Table header */}
-              <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-xs text-muted-foreground font-medium pb-1 border-b border-gold/10 mb-1">
-                <span>Ticker</span>
-                <span>Type</span>
-                <span className="text-right">Daily</span>
-                <span className="text-right">Total</span>
-              </div>
+                  {/* Table header */}
+                  <div className="grid grid-cols-[1fr_auto_5rem_5rem_1.25rem] gap-x-2 text-xs text-muted-foreground font-medium pb-1 border-b border-gold/10 mb-1">
+                    <span>Ticker</span>
+                    <span>Type</span>
+                    <span className="text-right">Daily</span>
+                    <span className="text-right">Total</span>
+                    <span />
+                  </div>
 
-              {/* Rows */}
-              {holdings.map((h) => (
-                <div
-                  key={h.id}
-                  className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center py-1.5 border-b border-gold/5 last:border-0 group"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-foreground">{h.ticker}</span>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs px-1.5 py-0 h-4 ${
-                          h.position === "long"
-                            ? "border-emerald-400/50 text-emerald-400"
-                            : "border-red-400/50 text-red-400"
-                        }`}
-                      >
-                        {h.position}
+                  {/* Top-5 rows */}
+                  {top5.map((h) => (
+                    <div
+                      key={h.id}
+                      className="grid grid-cols-[1fr_auto_5rem_5rem_1.25rem] gap-x-2 items-center py-1.5 border-b border-gold/5 last:border-0 group"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-semibold text-foreground">{h.ticker}</span>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs px-1.5 py-0 h-4 ${
+                              h.position === "long"
+                                ? "border-emerald-400/50 text-emerald-400"
+                                : "border-red-400/50 text-red-400"
+                            }`}
+                          >
+                            {h.position}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{h.name}</p>
+                      </div>
+
+                      <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 self-start mt-0.5">
+                        {h.type.toUpperCase()}
                       </Badge>
+
+                      <div className="flex justify-end">
+                        <PctBadge value={h.daily_pct} />
+                      </div>
+
+                      <div className="flex justify-end">
+                        <PctBadge value={h.total_pct} />
+                      </div>
+
+                      {isOwn ? (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleDelete(h.id); }}
+                          disabled={deletingId === h.id}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400"
+                          aria-label="Delete holding"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <span />
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">{h.name}</p>
-                  </div>
+                  ))}
 
-                  <Badge
-                    variant="secondary"
-                    className="text-xs px-1.5 py-0 h-5 self-start mt-0.5"
-                  >
-                    {h.type.toUpperCase()}
-                  </Badge>
+                  {/* "+N more" hint */}
+                  {extra > 0 && (
+                    <p className="text-xs text-muted-foreground text-center pt-2 pb-0.5">
+                      +{extra} more — click to view all
+                    </p>
+                  )}
 
-                  <div className="text-right">
-                    <PctBadge value={h.daily_pct} />
-                  </div>
-
-                  <div className="text-right flex items-center gap-1">
-                    <PctBadge value={h.total_pct} />
-                    {isOwn && (
-                      <button
-                        onClick={() => handleDelete(h.id)}
-                        disabled={deletingId === h.id}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400 ml-1"
-                        aria-label="Delete holding"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                  {/* Average portfolio return */}
+                  {avgReturn != null && (
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-gold/10">
+                      <span className="text-xs text-muted-foreground">Avg Portfolio Return</span>
+                      <span className={`text-sm font-semibold ${avgReturn >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {avgReturn >= 0 ? "+" : ""}{avgReturn.toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
             </div>
           )}
         </CardContent>
@@ -202,6 +238,16 @@ function MemberCard({ member, isOwn, token }: MemberCardProps) {
           onSuccess={fetchHoldings}
         />
       )}
+
+      <PortfolioDetailModal
+        member={member}
+        holdings={holdings}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+        isOwn={isOwn}
+        token={token}
+        onRefresh={fetchHoldings}
+      />
     </>
   );
 }
