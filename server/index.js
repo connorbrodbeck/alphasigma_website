@@ -15,7 +15,9 @@ const corsOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
 ];
-if (process.env.FRONTEND_URL) corsOrigins.push(process.env.FRONTEND_URL);
+if (process.env.FRONTEND_URL) {
+  process.env.FRONTEND_URL.split(',').forEach(url => corsOrigins.push(url.trim()));
+}
 
 app.use(cors({
   origin: corsOrigins,
